@@ -57,7 +57,7 @@ Spherical Parametrization : The output is two meshes, one for the surface and on
 	    <description>Output Euler txtFile</description>
     </file>
      
- <boolean>
+    <boolean>
 	    <name>logFile</name>
 	    <label>logFile</label>
 	    <longflag>logFile</longflag>
@@ -92,6 +92,13 @@ Spherical Parametrization : The output is two meshes, one for the surface and on
       <label>Verbose mode</label>
       <longflag>verb</longflag>
       <description>Verbose mode</description>
+    </boolean>
+    <boolean>
+      <name>useConformalMapping</name>
+      <default>false</default>
+      <label>Use Conformal Mapping Method</label>
+      <longflag>conf</longflag>
+      <description>Conformal Mapping Parametrization Method</description>
     </boolean>
     <geometry fileExtensions=".vtk,.meta">
       <name>initParaFileName</name>

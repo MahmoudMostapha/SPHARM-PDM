@@ -29,6 +29,11 @@
 #include <vtkVersion.h>
 #include <vtkSmartPointer.h>
 
+// Conformal Mapping
+#include "itkVTKPolyDataReader.h"
+#include "itkVTKPolyDataWriter.h"
+#include "myConformalFlatteningMeshFilter.h"
+
 
 using namespace std;
 void WriteEulerFile( std::string outEulerName, int Eulernum);
@@ -47,7 +52,16 @@ int main( int argc, char * argv[] )
   typedef itk::MeshSpatialObject<OutputMeshType>                    MeshSpatialObjectType;
   typedef itk::ImageFileReader<ImageType> VolumeReaderType;
 
+
   MeshSourceType::Pointer meshsrc = MeshSourceType::New();
+
+  // ConformalMapping
+  typedef itk::Mesh< double, 3 > MeshType;
+  typedef itk::ConformalFlatteningMeshFilter<MeshType, MeshType>  FilterType;
+  typedef MeshType::CellIdentifier  CellIdentifier;
+  typedef itk::VTKPolyDataReader<MeshType>  ITKReaderType;
+  typedef itk::VTKPolyDataWriter<MeshType>  ITKWriterType;
+
 
   ImageType::Pointer image;
   bool               initParaFile;
@@ -70,6 +84,7 @@ int main( int argc, char * argv[] )
   imageReader->Update();
   image = imageReader->GetOutput();
   OutputMeshType::Pointer mesh;
+  OutputMeshType::Pointer mesh0;
   OutputMeshType::Pointer parmesh;
 
   ofstream log;
@@ -144,7 +159,87 @@ int main( int argc, char * argv[] )
       {
       std::cout << "Creating Para Surface Mesh: " << std::endl;
       }
-    //MeshSourceType::Pointer meshsrc = MeshSourceType::New();
+    if (useConformalMapping)
+    {
+    // Run for 0 iterations
+    meshsrc->SetInput(image);
+    meshsrc->SetNumberOfIterations(0);
+    meshsrc->SetObjectValue(label);
+    meshsrc->Update();
+    // Output Mesh
+    mesh0 = meshsrc->GetSurfaceMesh();
+    // convert surfaces to VTK
+    itkMeshTovtkPolyData ITKVTKConverter;
+    ITKVTKConverter.SetInput( mesh0);
+    vtkSmartPointer<vtkPolyData> SurfMesh0 = vtkSmartPointer<vtkPolyData>::New();
+    SurfMesh0 = ITKVTKConverter.GetOutput();
+    std::cout << "SurfMesh0 has " << SurfMesh0->GetNumberOfPoints() << " points." << std::endl;
+    vtkSmartPointer<vtkPolyDataWriter> SurfMesh0writer = vtkSmartPointer<vtkPolyDataWriter>::New();
+    // Writing the SurfMesh0 file
+    #if VTK_MAJOR_VERSION > 5
+    SurfMesh0writer->SetInputData(SurfMesh0);
+    #else
+    SurfMesh0writer->SetInput(SurfMesh0);
+    #endif
+    SurfMesh0writer->SetFileName("SurfMesh0.vtk");
+    SurfMesh0writer->Write();
+    // Read the SurfMesh0 file
+    ITKReaderType::Pointer ITKreader = ITKReaderType::New();
+    ITKreader->SetFileName( "SurfMesh0.vtk" );
+    try
+      {
+        ITKreader->Update();
+      }
+    catch( itk::ExceptionObject & excp )
+      {
+      std::cerr << excp << std::endl;
+      return EXIT_FAILURE;
+      }
+    MeshType::Pointer SurfMesh0_R = ITKreader->GetOutput();
+    // Use the output mesh to run ConformalMapping
+    FilterType::Pointer filter = FilterType::New();
+    filter->SetInput( SurfMesh0_R );
+    CellIdentifier  polarCellId = 0; // default set to the first cell
+    filter->SetPolarCellIdentifier( polarCellId );
+    filter->MapToSphere();
+    // Execute the filter
+    std::cout << "Execute the filter" << std::endl;
+    try
+      {
+      filter->Update();
+      }
+    catch( itk::ExceptionObject & excp )
+      {
+      std::cerr << excp << std::endl;
+      return EXIT_FAILURE;
+      }
+     // Get the Smart Pointer to the Filter Output
+     MeshType::Pointer Confpara = filter->GetOutput();
+     // Write as VTK
+     ITKWriterType::Pointer ITKwriter = ITKWriterType::New();
+     ITKwriter->SetInput( Confpara );
+     ITKwriter->SetFileName( "Confpara.vtk" );
+     ITKwriter->Update();
+     // Read VTK
+     vtkSmartPointer<vtkPolyData>      ConfparaVTK = vtkSmartPointer<vtkPolyData>::New();
+     ConfparaVTK = ReadPolyData( "Confpara.vtk" );
+     // Convert to Meta
+     VTKITKConverter.SetInput( ConfparaVTK);
+     OutputMeshType::Pointer ConfparaITK;
+     ConfparaITK = VTKITKConverter.GetOutput();
+     std::cout << "Converting vtk done"  << std::endl;
+     // Use ConformalMapping output as input 
+     meshsrc->SetInput(image);
+     meshsrc->SetNumberOfIterations(numIterations);
+     meshsrc->SetObjectValue(label);
+     meshsrc->SetInitParametricMesh(ConfparaITK);
+     meshsrc->Update();
+     // Output Mesh
+     mesh = meshsrc->GetSurfaceMesh();
+     // Create the mesh Spatial Object
+    }
+    else
+    {  
     meshsrc->SetInput(image);
     meshsrc->SetNumberOfIterations(numIterations);
     meshsrc->SetObjectValue(label);
@@ -156,7 +251,7 @@ int main( int argc, char * argv[] )
     // Output Mesh
     mesh = meshsrc->GetSurfaceMesh();
     // Create the mesh Spatial Object
-
+    }
    if (meshsrc->GetEulerNum() == 2 )
    {
 
